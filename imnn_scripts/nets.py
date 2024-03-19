@@ -88,7 +88,7 @@ class InceptNet(nn.Module):
         fs2 = 4
         
         x = InceptBlock([fs, fs2, fs2, fs], strides=(4,4,2), dims=3, do_5x5=False)(x) # 32
-        x = nn.swish(x)
+        x = self.act(x)
         
 
         x = InceptBlock([fs, fs2*2, fs2*2, fs], strides=(4,4,2), dims=3, do_5x5=False)(x) # 16
