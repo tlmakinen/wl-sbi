@@ -88,5 +88,5 @@ class MOPED:
     
     
     def _get_fisher(self):
-        return 0.5 * jnp.einsum("ij,jl,kl->ik", self.mu_dervs, self.invC, self.mu_dervs)
+        return jnp.einsum("ij,jl,kl->ik", self.mu_dervs, self.invC, self.mu_dervs)
     
