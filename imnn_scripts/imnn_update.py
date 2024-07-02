@@ -406,10 +406,8 @@ class _updateIMNN:
             # CHANGE TO BRUTE FORCE SOLUTION
             #F = np.einsum("ij,ik,kl->jl", dμ_dθ_full, invCfull, dμ_dθ_full)
             #F_network = F
-
-            detFnew = self._slogdet(F)  #self._slogdet(self.F_t) - self._slogdet(Σ) + self._slogdet(Σ + np.einsum("ji,jk,kl->il", Λ_info, self.invF_t, Λ_info))
-
-            #dμ_dθ = dμ_dθ_full # reassign the full derivative vector for get_estimate
+            
+            detFnew = self._slogdet(F) #+ 2*offdiag #  double the off-diag in the loss calculation
 
         else:
             # default settings
