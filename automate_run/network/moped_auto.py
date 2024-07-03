@@ -27,14 +27,21 @@ def load_obj(name):
 
 
 #@title script to get moped dependent on noise amplitdue
-def get_moped_and_summaries(N, noiseamp, n_gal=30.,
+def get_moped_and_summaries(
+                            key,
+                            N, 
+                            noiseamp, 
+                            n_gal=30.,
                             ell_min=0, 
                             cl_cut=-1, 
                             outbins=6, 
                             bins=None, 
                             do_log=False, 
                             simdir="/data101/makinen/lemur_sims/pm_sims/N192_hires/",
-                            L=250):
+                            L=250,
+                            Lz=4000,
+                            Nz=512,
+                            num_tomo=4):
 
     
     cl_cut = cl_cut
@@ -42,9 +49,9 @@ def get_moped_and_summaries(N, noiseamp, n_gal=30.,
         OUTBINS = bins
     else:
         OUTBINS = outbins
-    num_tomo = 4
-    Lgrid = (L, L, 4000)
-    Nmesh = (N,N,512)
+    
+    Lgrid = (L,L,Lz)
+    Nmesh = (N,N,Nz)
     num_bins = outbins
     chi_grid = (jnp.arange(Nmesh[2]) + 0.5) * Lgrid[2] / Nmesh[2]
     chi_source = chi_grid[-1]
@@ -64,7 +71,7 @@ def get_moped_and_summaries(N, noiseamp, n_gal=30.,
                         [jnp.load(simdir + "derv/sim_%d.npy"%(i))[jnp.newaxis, ...] for i in range(n_d*2*2*2)]
                         ), axis=0).reshape(n_d*2, 2, 2, 4, N, N)
     
-    key = jr.PRNGKey(7777)
+    key = 
     key,rng = jr.split(key)
     
     fid_keys = jr.split(key, num=2*n_s)
@@ -76,7 +83,6 @@ def get_moped_and_summaries(N, noiseamp, n_gal=30.,
     ellmin = np.argmin((ell - ell_min)**2)
 
     print("MINIMUM ELL IDX: ", ellmin)
-
     
     def compute_variance_catalog(zmean=z_means_analysis, n_gal=n_gal):
     

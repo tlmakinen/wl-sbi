@@ -11,14 +11,15 @@ import jax.random as jr
 
 import cloudpickle as pickle
 
-
 np = jnp
 
 from imnns import _check_input
 from functools import partial
 from progress_bar import *
 from imnns import *
-
+import netket as nk
+from jax import config
+config.update("jax_enable_x64", False)
 
 class _updateIMNN:
 
@@ -163,7 +164,7 @@ class _updateIMNN:
             np.zeros(shape), np.zeros(shape), np.zeros(shape), np.zeros(shape),
             np.int32(0), np.int32(0), self.state, self.w, rng)
 
-    def fit(self, λ, ϵ, γ=1000., rng=None, patience=100, min_iterations=100,
+    def fit(self, λ, ϵ, γ=1000., γ2=100., rng=None, patience=100, min_iterations=100,
             max_iterations=int(1e5), print_rate=None, best=True):
 
         @jax.jit
@@ -172,7 +173,7 @@ class _updateIMNN:
             return jax.lax.while_loop(
                 partial(self._fit_cond, patience=patience,
                         max_iterations=max_iterations),
-                partial(self._fit, λ=λ, α=α, γ=γ, min_iterations=min_iterations),
+                partial(self._fit, λ=λ, α=α, γ=γ, γ2=γ2, min_iterations=min_iterations),
                 inputs)
 
         def _fit_pbar(inputs):
@@ -182,13 +183,14 @@ class _updateIMNN:
                     partial(self._fit_cond, patience=patience,
                             max_iterations=max_iterations)),
                 jax.jit(
-                    partial(self._fit, λ=λ, α=α,  γ=γ,
+                    partial(self._fit, λ=λ, α=α,  γ=γ, γ2=γ2,
                             min_iterations=min_iterations)),
                 inputs)
 
         λ = λ 
         ϵ = ϵ 
         γ = γ 
+        γ2 = γ2
         α = self.get_α(λ, ϵ)
         patience = patience 
         min_iterations = min_iterations 
@@ -244,7 +246,7 @@ class _updateIMNN:
         return - math.log(ϵ * (λ - 1.) + ϵ ** 2. / (1 + ϵ)) / ϵ
 
     #@progress_bar_scan(num_samples)
-    def _fit(self, inputs, λ=None, α=None, γ=None,  min_iterations=None):
+    def _fit(self, inputs, λ=None, α=None, γ=None, γ2=None,  min_iterations=None):
 
         max_detF, best_w, detF, detC, detinvC, Λ2, r, \
             counter, patience_counter, state, w, rng = inputs
@@ -252,7 +254,7 @@ class _updateIMNN:
 
 
         grad, results = jax.grad(
-            self._get_loss, argnums=0, has_aux=True)(w, λ, α, γ, training_key)
+            self._get_loss, argnums=0, has_aux=True)(w, λ, α, γ, γ2, training_key)
 
         #if self.pass_params:
         updates, state = self._update(grad, state, w)
@@ -313,7 +315,7 @@ class _updateIMNN:
         # if not self.existing_statistic:
         #     raise ValueError(
         #             "This IMNN has not been initialised as an information-update " +
-        #             "IMNN. Pleasereinitialise the IMNN with an existing statistic.")
+        #             "IMNN. Please reinitialise the IMNN with an existing statistic.")
         # else:
         self.n_t = existing_statistic["n_t"]
         self.μ_t = existing_statistic["mean_derivatives"]
@@ -402,12 +404,8 @@ class _updateIMNN:
             invΣ = np.linalg.inv(Σ)
             F_network = np.einsum("ij,jk,lk->il", Λ_info, invΣ, Λ_info)
             F = F_network + F_t # CHANGE TO COMPUTING F_t every time
-
-            # CHANGE TO BRUTE FORCE SOLUTION
-            #F = np.einsum("ij,ik,kl->jl", dμ_dθ_full, invCfull, dμ_dθ_full)
-            #F_network = F
             
-            detFnew = self._slogdet(F) #+ 2*offdiag #  double the off-diag in the loss calculation
+            detFnew = self._slogdet(F)
 
         else:
             # default settings
@@ -455,22 +453,22 @@ class _updateIMNN:
                 np.linalg.norm(invC - np.eye(self.n_summaries - self.n_t))
         return reg
 
-    def _get_loss(self, w, λ, α, γ, key=None):
+    def _get_loss(self, w, λ, α, γ, γ2, key=None):
         summaries, derivatives = self.get_summaries(w=w, key=key)
-        return self._calculate_loss(summaries, derivatives, λ, α, γ)
+        return self._calculate_loss(summaries, derivatives, λ, α, γ, γ2)
 
-    def _calculate_loss(self, summaries, derivatives, λ, α, γ):
-        F, C, invC, dμ_dθ, _, F_network, detFnew, *_ = self._calculate_F_statistics(
+    def _calculate_loss(self, summaries, derivatives, λ, α, γ, γ2):
+        F, C, invC, dμ_dθ, _, F_network, detFnew, u, *_ = self._calculate_F_statistics(
             summaries, derivatives)
         # TODO CHECK THIS
-        #lndetF = self._slogdet(F_network)
         lndetF = detFnew
+        upenalty = np.abs(u.sum())  #  np.abs(u).sum() # L1 norm for components of u => upweight this maybe
         Λ2 = self._get_regularisation(C, invC)
         if self.do_reg:
             r = self._get_regularisation_strength(Λ2, λ, α)
         else:
             r = γ*0.5
-        return - lndetF + r * Λ2, (F, C, invC, Λ2, r)
+        return - lndetF + r * Λ2 + γ2*upenalty, (F, C, invC, Λ2, r)
 
     def get_summaries(self, w=None, key=None, validate=False):
         raise ValueError("`get_summaries` not implemented")
@@ -573,121 +571,20 @@ class _updateIMNN:
         if filename is not None:
             plt.savefig(filename, bbox_inches="tight", transparent=True)
         return ax
-
-
-
-
-##### NUM GRAD IMNN #####
-## PUT IN NOISE NUMERICAL GRAD IMNN
-
-class NumericalGradientIMNN(_updateIMNN):
-    """Information maximising neural network fit using numerical derivatives
-    """
-    def __init__(self, n_s, n_d, n_params, n_summaries, input_shape, θ_fid,
-                 model, optimiser, key_or_state, fiducial, derivative, δθ,
-                 validation_fiducial=None, validation_derivative=None, 
-                    existing_statistic=None,
-                 dummy_graph_input=None,
-                 no_invC=False, do_reg=True, evidence=False):
-
-        super().__init__(
-            n_s=n_s,
-            n_d=n_d,
-            n_params=n_params,
-            n_summaries=n_summaries,
-            input_shape=input_shape,
-            θ_fid=θ_fid,
-            model=model,
-            key_or_state=key_or_state,
-            optimiser=optimiser,
-            existing_statistic=existing_statistic,
-            dummy_graph_input=dummy_graph_input,
-            no_invC=no_invC,
-            do_reg=do_reg,
-            evidence=evidence)
-        self._set_data(δθ, fiducial, derivative, validation_fiducial,
-                       validation_derivative)
-        self.dummy_graph_input = dummy_graph_input
-
-    def _set_data(self, δθ, fiducial, derivative, validation_fiducial,
-                  validation_derivative):
-        self.δθ = np.expand_dims(
-            _check_input(δθ, (self.n_params,), "δθ"), (0, 1))
-        if self.dummy_graph_input is None:
-          self.fiducial = _check_input(
-              fiducial, (self.n_s,) + self.input_shape, "fiducial")
-          self.derivative = _check_input(
-              derivative, (self.n_d, 2, self.n_params) + self.input_shape,
-              "derivative")
-          if ((validation_fiducial is not None)
-                  and (validation_derivative is not None)):
-              self.validation_fiducial = _check_input(
-                  validation_fiducial, (self.n_s,) + self.input_shape,
-                  "validation_fiducial")
-              self.validation_derivative = _check_input(
-                  validation_derivative,
-                  (self.n_d, 2, self.n_params) + self.input_shape,
-                  "validation_derivative")
-              self.validate = True
-        else:
-          self.fiducial = fiducial
-          self.derivative = derivative
-
-          if ((validation_fiducial is not None)
-                  and (validation_derivative is not None)):
-              self.validation_fiducial = validation_fiducial
-              self.validation_derivative =  validation_derivative
-              self.validate = True
-
-
-    def _collect_input(self, key, validate=False):
-        if validate:
-            fiducial = self.validation_fiducial
-            derivative = self.validation_derivative
-        else:
-            fiducial = self.fiducial
-            derivative = self.derivative
-        return fiducial, derivative
-
-    def get_summaries(self, w, key=None, validate=False):
-        
-        d, d_mp = self._collect_input(key, validate=validate)
-        
-        
-        if self.dummy_graph_input is None:
-          _model = lambda d: self.model(w, d)
-          x = jax.vmap(_model)(d)
-          x_mp = np.reshape(
-              jax.vmap(_model)(
-                    d_mp.reshape(
-                      (self.n_d * 2 * self.n_params,) + self.input_shape)),
-              (self.n_d, 2, self.n_params, self.n_summaries))
-        else:
-          # if operating on graph data, we need to vmap the implicit
-          # batch dimension
-          _model = lambda d: self.model(w, d)
-          x = jax.vmap(_model)(d)
-          x_mp = np.reshape(
-              jax.vmap(_model)(d_mp),
-              (self.n_d, 2, self.n_params, self.n_summaries))
-
-        return x, x_mp
-
-    def _construct_derivatives(self, x_mp):
-        return np.swapaxes(x_mp[:, 1] - x_mp[:, 0], 1, 2) / self.δθ
-
+    
 
 
 
 
 # NOISE NUMERICAL GRADIENT IMNN
-class NoiseNumericalGradientIMNN(_updateIMNN):
+class newNoiseNumericalGradientIMNN(_updateIMNN):
     """Information maximising neural network fit with simulations on-the-fly
     """
     def __init__(self, n_s, n_d, n_params, n_summaries, input_shape, θ_fid, δθ,
                  model, optimiser, key_or_state,
                  noise_simulator, 
                  fiducial, derivative,
+                 chunk_size=100,
                  validation_fiducial=None, validation_derivative=None, 
                  existing_statistic=None,
                  dummy_graph_input=None,
@@ -760,13 +657,14 @@ class NoiseNumericalGradientIMNN(_updateIMNN):
             do_reg=do_reg,
             evidence=evidence)
 
+        self.chunk_size = chunk_size
         self.existing_statistic = existing_statistic
         self.simulator = noise_simulator
         #self.simulate = True
         self.dummy_graph_input = dummy_graph_input
-        self.θ_der = (θ_fid + np.einsum("i,jk->ijk", np.array([-1., 1.]), 
-                                        np.diag(δθ) / 2.)).reshape((-1, 2))
-        self.δθ = np.expand_dims(
+        self.θ_der = (θ_fid + jnp.einsum("i,jk->ijk", jnp.array([-1., 1.]), 
+                                        jnp.diag(δθ) / 2.)).reshape((-1, 2))
+        self.δθ = jnp.expand_dims(
             _check_input(δθ, (self.n_params,), "δθ"), (0, 1))
         
         # NUMERICAL GRADIENT SETUP
@@ -778,33 +676,38 @@ class NoiseNumericalGradientIMNN(_updateIMNN):
                   validation_derivative):
         """Checks and sets data attributes with the correct shape
         """
-        self.δθ = np.expand_dims(
+        self.δθ = jnp.expand_dims(
             _check_input(δθ, (self.n_params,), "δθ"), (0, 1))
-        if self.dummy_graph_input is None:
-          self.fiducial = _check_input(
-              fiducial, (self.n_s,) + self.input_shape, "fiducial")
-          self.derivative = _check_input(
-              derivative, (self.n_d, 2, self.n_params) + self.input_shape,
-              "derivative")
-          if ((validation_fiducial is not None)
-                  and (validation_derivative is not None)):
-              self.validation_fiducial = _check_input(
-                  validation_fiducial, (self.n_s,) + self.input_shape,
-                  "validation_fiducial")
-              self.validation_derivative = _check_input(
-                  validation_derivative,
-                  (self.n_d, 2, self.n_params) + self.input_shape,
-                  "validation_derivative")
-              self.validate = True
-        else:
-          self.fiducial = fiducial
-          self.derivative = derivative
+        # if self.dummy_graph_input is None:
+        #   self.fiducial = _check_input(
+        #       fiducial, (self.n_s,) + self.input_shape, "fiducial")
+        #   self.derivative = _check_input(
+        #       derivative, (self.n_d, 2, self.n_params) + self.input_shape,
+        #       "derivative")
+        #   if ((validation_fiducial is not None)
+        #           and (validation_derivative is not None)):
+        #       self.validation_fiducial = _check_input(
+        #           validation_fiducial, (self.n_s,) + self.input_shape,
+        #           "validation_fiducial")
+        #       self.validation_derivative = _check_input(
+        #           validation_derivative,
+        #           (self.n_d, 2, self.n_params) + self.input_shape,
+        #           "validation_derivative")
+        #       self.validate = True
+        # else:
+        self.fiducial = fiducial
+        self.derivative = derivative
 
-          if ((validation_fiducial is not None)
-                  and (validation_derivative is not None)):
-              self.validation_fiducial = validation_fiducial
-              self.validation_derivative =  validation_derivative
-              self.validate = True
+        if ((validation_fiducial is not None)
+              and (validation_derivative is not None)):
+          self.validation_fiducial = validation_fiducial
+          self.validation_derivative =  validation_derivative
+          self.validate = True
+
+    # function to assign keys to dictionary to do vmap_chunked in batches with one argument
+    def _assign_keys(self, key, data):
+        return dict(key=key,
+                    data=data)
 
 
     def _collect_input(self, key, validate=False):
@@ -816,17 +719,30 @@ class NoiseNumericalGradientIMNN(_updateIMNN):
         else:
             fiducial = self.fiducial
             derivative = self.derivative
+
+        key,rng = jax.random.split(key)
+        # use fnames to load in dataset
+
+        # load simulations and choose random (big) batch
+        fiducial = jnp.load(fiducial)[jax.random.choice(key, self.n_s, \
+                                   shape=(self.n_s,), replace=False)]
+        derivative = jnp.load(derivative)[jax.random.choice(key, self.n_d, \
+                                   shape=(self.n_d,), replace=False)]
             
         # add noise to data and make cuts
-        keys = np.array(jax.random.split(key, num=self.n_s))
-        fiducial = jax.vmap(self.simulator)(keys, fiducial)
+        keys = jnp.array(jax.random.split(key, num=self.n_s))
+        # FIDUCIAL IS NOW A DICTIONARY
+        fiducial = jax.vmap(self._assign_keys)(keys, fiducial) # this is inexpensive
+        fiducial = nk.jax.vmap_chunked(self.simulator, chunk_size=self.chunk_size)(fiducial) # output is array
+
         
         _shape = derivative.shape
-        derivative = jax.vmap(self.simulator)(
-                np.repeat(keys[:self.n_d], 2*self.n_params, axis=0),
-                derivative.reshape(
-                      (self.n_d * 2 * self.n_params,) + self.input_shape)).reshape(_shape)
-                      
+        # DERIVATIVE IS NOW A DICTIONARY
+        derivative = jax.vmap(self._assign_keys)(np.repeat(keys[:self.n_d], 2*self.n_params, axis=0), 
+                                                 derivative.reshape((self.n_d * 2 * self.n_params,) + self.input_shape))
+        
+        derivative = nk.jax.vmap_chunked(self.simulator, chunk_size=self.chunk_size)(derivative).reshape(_shape) # output is array
+        # returns arrays, not dictionaries          
         return fiducial, derivative
 
     def _get_fitting_keys(self, rng):
@@ -853,9 +769,11 @@ class NoiseNumericalGradientIMNN(_updateIMNN):
         
         if self.dummy_graph_input is None:
           _model = lambda d: self.model(w, d)
-          x = jax.vmap(_model)(d)
-          x_mp = np.reshape(
-              jax.vmap(_model)(
+          # try the netket batched vmap
+          # nk.jax.vmap_chunked(f, in_axes=0, *, chunk_size, axis_0_is_sharded=False)
+          x = nk.jax.vmap_chunked(_model, chunk_size=self.chunk_size)(d)
+          x_mp = jnp.reshape(
+              nk.jax.vmap_chunked(_model, chunk_size=self.chunk_size)(
                     d_mp.reshape(
                       (self.n_d * 2 * self.n_params,) + self.input_shape)),
               (self.n_d, 2, self.n_params, self.n_summaries))
@@ -865,7 +783,7 @@ class NoiseNumericalGradientIMNN(_updateIMNN):
           # batch dimension
           _model = lambda d: self.model(w, d)
           x = jax.vmap(_model)(d)
-          x_mp = np.reshape(
+          x_mp = jnp.reshape(
               jax.vmap(_model)(d_mp),
               (self.n_d, 2, self.n_params, self.n_summaries))
 
@@ -874,5 +792,4 @@ class NoiseNumericalGradientIMNN(_updateIMNN):
     def _construct_derivatives(self, x_mp):
         """Builds derivatives of the network outputs wrt model parameters
         """
-        return np.swapaxes(x_mp[:, 1] - x_mp[:, 0], 1, 2) / self.δθ
-
+        return jnp.swapaxes(x_mp[:, 1] - x_mp[:, 0], 1, 2) / self.δθ

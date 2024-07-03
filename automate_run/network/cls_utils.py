@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from functools import partial
 import flax.linen as nn
 import jax.random as jr
+import netket as nk
 
 
 def indices_vector(num_tomo):
@@ -15,13 +16,13 @@ def indices_vector(num_tomo):
     compute auto- and cross-indices 
     for Cls calculation
     """
-   indices = []
-   cc = 0
-   for catA in range(0,num_tomo,1):
-      for catB in range(catA,num_tomo,1):
-        indices.append([catA, catB])
-        cc += 1
-   return indices
+    indices = []
+    cc = 0
+    for catA in range(0,num_tomo,1):
+        for catB in range(catA,num_tomo,1):
+            indices.append([catA, catB])
+            cc += 1
+    return indices
 
 
 
@@ -31,7 +32,7 @@ def compute_auto_cross_angular_power_spectrum(
     field2: jnp.ndarray,
     distance: float,
     size: float,
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """
     Compute the auto or cross angular power spectrum of 2D arrays of data.
 
@@ -89,3 +90,28 @@ def compute_auto_cross_angular_power_spectrum(
     Cl = (binned_power / mode_counts) * theta**2
 
     return ell, Cl
+
+
+
+# def cls_allbins(tomo_data, key, chunk_size=10):
+#     def get_spec(index, tomo_data, key):
+#         if do_noise:
+#             tomo_data = noise_simulator(key, tomo_data)
+#         ell,cl = compute_auto_cross_angular_power_spectrum(tomo_data[index[0]], tomo_data[index[1]],
+#                                                     chi_source, Lgrid[0])
+    
+#         return jnp.histogram(ell[:cl_cut], weights=cl[:cl_cut], bins=OUTBINS)[0]
+#     gps = partial(get_spec, tomo_data=tomo_data, key=key)
+#     return nk.jax.vmap_chunked(gps, chunk_size=chunk_size)(indices)
+
+
+
+
+
+def cls_allbins_nonoise(tomo_data, chunk_size=2):
+    def get_spec_nonoise(index, tomo_data):
+        ell,cl = compute_auto_cross_angular_power_spectrum(tomo_data[index[0]], tomo_data[index[1]],
+                                                chi_source, Lgrid[0])
+        return jnp.histogram(ell[:cl_cut], weights=cl[:cl_cut], bins=OUTBINS)[0]
+    gps = partial(get_spec_nonoise, tomo_data=tomo_data)
+    return nk.jax.vmap_chunked(gps, chunk_size=chunk_size)(indices)
