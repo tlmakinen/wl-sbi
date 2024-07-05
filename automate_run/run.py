@@ -1,20 +1,17 @@
 import os,sys,pathlib
 from typing import Tuple
-
-
 # change JAX GPU memory preallocation fraction
 #os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '.95'
 os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
 
-
 from jax import config as jconfig
 jconfig.update("jax_enable_x64", False)
 import jax
-
 import math
 import jax.numpy as jnp
 import jax_cosmo as jc
 import optax
+import numpy as onp
 
 from functools import partial
 import flax.linen as nn
@@ -23,7 +20,6 @@ import cloudpickle as pickle
 import gc
 from tqdm import tqdm as tq
 import yaml
-
 from functools import partial
 import netket as nk
 jconfig.update("jax_enable_x64", False) # just to be sure nk doesn't undo the above
@@ -31,7 +27,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-
+# local imports here
 from network.moped import *
 from fisherplot import plot_fisher_ellipse
 from network.net_utils import *
@@ -40,7 +36,6 @@ from network.cls_utils import *
 from network.train_utils import *
 from network.imnn_update import *
 from fisherplot import plot_fisher_ellipse
-
 from lemur import analysis, background, cosmology, limber, simulate, plot, utils, constants
 
 np = jnp
@@ -55,6 +50,7 @@ def load_obj(name):
         return pickle.load(f)
 
 
+# -----
 # folder to load config file
 CONFIG_PATH = "./config/"
 
@@ -69,8 +65,10 @@ def load_config(config_name):
     return config
 
 config = load_config(config_name)
+# -----
 
 
+# -----
 # UNPACK GLOBAL CONFIG VALUES
 outdir = config["datadir"]
 N = config["N"]
@@ -111,11 +109,10 @@ mpk_layer = MultipoleCNNFactory(
 
 act = smooth_leaky
 
-
 key = jr.PRNGKey(55)
 rng, key = jr.split(key)
-input_shape = (4, N, N)
-
+input_shape = (num_tomo, N, N)
+# -----
 
 
 
@@ -128,6 +125,8 @@ def run_training(key, noiseamp,
     # make output directories
     pathlib.Path(config["output_directory"]).mkdir(parents=True, exist_ok=True) 
     pathlib.Path(config["output_plot_directory"]).mkdir(parents=True, exist_ok=True) 
+    pathlib.Path(config["weightdir"]).mkdir(parents=True, exist_ok=True) 
+
 
     # dump the config file with noise extension (in case we change training params)
     outconfig = os.path.join(config["weightdir"], 'noise_%d'%(noiseamp*100) + config_name)
@@ -142,7 +141,7 @@ def run_training(key, noiseamp,
     if weightfile is not None:
         print("WILL LOAD WEIGHTS FROM FILE", weightdir + weightfile)
         print("-----------------------")
-        
+
     # --- OPTIMISER STUFF
     # Clip gradients at max value, and evt. apply weight decay
     transf = [optax.clip(float(config["gradient_clip"]))]
@@ -263,7 +262,7 @@ def run_training(key, noiseamp,
     print("training IMNN now")
     key,rng = jax.random.split(key) # retrain # patience=75, min_its=300 
     IMNN.fit(10.0, 0.01, γ=1.0, rng=jnp.array(rng), 
-                                print_rate=2, 
+                                print_rate=None, # change to 2 to fit with pbar
                                 patience=int(config["patience"]), 
                                 max_iterations=int(config["max_iterations"]), 
                                 min_iterations=int(config["min_iterations"])) 
@@ -435,7 +434,6 @@ def main():
     
     noiseamp = float(sys.argv[2])
 
-    
     weightfile_index = int(sys.argv[3]) if (int(sys.argv[3]) >= 0) else None # index of noise schedule to load for transfer learning
 
     # 19 noise levels to train on
@@ -445,7 +443,7 @@ def main():
     # if weightfile not specified, start from scratch, else load previous round's weights
     if weightfile_index is not None:
         noiseamp_to_load = training_noise_amplitudes[weightfile_index]
-        weightfile = config["weightfile"] +  "_N_%d_noise_%d"%(N, noiseamp_to_load*100)
+        weightfile = config["weightfile"] +  "_N_%d_noise_%d.pkl"%(N, noiseamp_to_load*100)
 
     else:
         weightfile = None
