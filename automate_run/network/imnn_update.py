@@ -180,7 +180,7 @@ class _updateIMNN:
             np.zeros(shape), np.zeros(shape), np.zeros(shape), np.zeros(shape),
             np.int32(0), np.int32(0), self.state, self.w, rng)
 
-    def fit(self, λ, ϵ, γ=1000., γ2=100., rng=None, patience=100, min_iterations=100,
+    def fit(self, λ, ϵ, γ=1000., γ2=0., rng=None, patience=100, min_iterations=100,
             max_iterations=int(1e5), print_rate=None, best=True):
 
         @jax.jit

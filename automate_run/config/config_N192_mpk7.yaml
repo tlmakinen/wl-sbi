@@ -47,14 +47,14 @@ model_key: 44       # initial random seed
 # compression network hyperparameters
 
 ## multipole kernel embedding
-mpk_kernel: 13                # multipole kernel size
+mpk_kernel: 7                # multipole kernel size
 polynomial_degrees: [0, 1, 2] # mpk expansion
 mpk_strides: [1, 1]           # strides for embedding layer
 mpk_input_filters: [4, 6]    # input number of channels for MPK embedding. Here we have num_tomo=4 inputs and 6 inputs 
                        # for the residual mpk embedding for \ell=[0,1,2] 
                        # TODO: determine these automatically
 act: smooth_leaky
-filters: [3,3,3]       # initial filter count for incept-stride network
+filters: [1, 1, 1]       # initial filter count for incept-stride network
 n_extra_summaries: 2   # number of output summaries
 
 
@@ -62,13 +62,13 @@ n_extra_summaries: 2   # number of output summaries
 learning_rate: 0.0005    # learning rate
 gradient_clip: 1.0     # gradient clip value
 
-patience: 175         # how many epochs to wait to stop training
-min_iterations: 200   # minimum number of training epochs 
+patience: 100         # how many epochs to wait to stop training
+min_iterations: 300   # minimum number of training epochs 
 max_iterations: 7000  # maximum number of training epochs
 
 training_noise_amplitudes: [0.125, 0.15, 0.20, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0]
 
-weightdir: /data101/makinen/lemur_sims/pm_sims/N192_hires/automatic_noise_run/         # where to save the model weights after training
+weightdir: /data101/makinen/lemur_sims/pm_sims/N192_hires/mpk7_full_run/         # where to save the model weights after training
 weightfile: imnn_w
 
 # prior dataset details
@@ -81,8 +81,8 @@ target_name: "target_L_250_N_192_Nz_512.npz"
 
 
 # output directories for summaries etc
-output_directory: ./results/N192_automatic_full_run/
-output_plot_directory: ./results/N192_automatic_full_run/plots/
+output_directory: ./results/N192_mpk7_full_run/
+output_plot_directory: ./results/N192_mpk7_full_run/plots/
 
 
 
