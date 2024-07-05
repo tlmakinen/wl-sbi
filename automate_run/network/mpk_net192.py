@@ -4,25 +4,25 @@ import flax.linen as nn
 
 import jax
 import jax.numpy as jnp
-from NPE import npe
-from NPE.multipole_cnn import MultipoleConv
-from NPE.multipole_cnn_factory import MultipoleCNNFactory
+from network.NPE import npe
+from network.NPE.multipole_cnn import MultipoleConv
+from network.NPE.multipole_cnn_factory import MultipoleCNNFactory
 import cloudpickle as pickle
 
 Array = Any
 np = jnp
 
-from cls_utils import *
-from moped_auto import *
-from moped import *
-from net_utils import *
+from network.cls_utils import *
+from network.moped_auto import *
+from network.moped import *
+from network.net_utils import *
 
 
 class InceptStride(nn.Module):
     """Inception block submodule"""
     filters: Sequence[int]
     pad_shape: int
-    act: Callable = almost_leaky
+    act: Callable = smooth_leaky
     do_1x1: bool = True
     do_4x4: bool = True
     dim: int = 2
@@ -100,9 +100,11 @@ class MPK_InceptNet(nn.Module):
     filters: Sequence[int]
     multipole_tomo1: MPK_layer
     moped: MOPED
+    cl_compression: Callable
     div_factor: float = 0.02
+    cl_shape: int = 60
     n_outs: int = 1
-    act: Callable = nn.swish
+    act: Callable = smooth_leaky
     dtype: Any = jnp.bfloat16
     
     @nn.compact
@@ -111,7 +113,7 @@ class MPK_InceptNet(nn.Module):
         filters = self.filters
 
         # add in Cls information
-        cls_summs = cls_allbins_nonoise(jax.lax.stop_gradient(x.astype(self.dtype))).reshape(-1, cl_shape)
+        cls_summs = self.cl_compression(jax.lax.stop_gradient(x.astype(self.dtype))).reshape(-1, self.cl_shape)
         cls_summs = self.moped.compress(jax.lax.stop_gradient(cls_summs)).reshape(-1) # moped compression
 
         xlog = (log_transform(jax.lax.stop_gradient(x)) / 0.02).transpose((1,2,0))

@@ -4,10 +4,11 @@ import flax.linen as nn
 
 import jax
 import jax.numpy as jnp
-from NPE import npe
-from NPE.multipole_cnn import MultipoleConv
-from NPE.multipole_cnn_factory import MultipoleCNNFactory
+from network.NPE import npe
+from network.NPE.multipole_cnn import MultipoleConv
+from network.NPE.multipole_cnn_factory import MultipoleCNNFactory
 import cloudpickle as pickle
+import math
 
 Array = Any
 np = jnp
@@ -41,7 +42,7 @@ def smooth_leaky(x: Array) -> Array:
   Computes the element-wise function:
 
   .. math::
-    \mathrm{almost\_leaky}(x) = \begin{cases}
+    \mathrm{smooth\_leaky}(x) = \begin{cases}
       x, & x \leq -1\\
       - |x|^3/3, & -1 \leq x < 1\\
       3x & x > 1
@@ -95,7 +96,7 @@ def get_padding(arraylen, padto):
 
 class MPK_layer(nn.Module):
     multipole_layers: Sequence[MultipoleConv]
-    act: Callable = almost_leaky
+    act: Callable = smooth_leaky
 
     @nn.compact
     def __call__(self, x):

@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from functools import partial
 import flax.linen as nn
 
-from progress_bar import *
+from network.progress_bar import *
 
 
 

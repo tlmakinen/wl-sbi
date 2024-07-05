@@ -8,14 +8,15 @@ import matplotlib.pyplot as plt
 from functools import partial
 import flax.linen as nn
 import cloudpickle as pickle
-
+from tqdm import tqdm as tq
 
 np = jnp
 
-from imnns import *
-from imnn_update import *
-from cls_utils import *
-from moped import *
+from network.cls_utils import *
+from network.train_utils import *
+from network.moped import *
+from lemur import analysis, background, cosmology, limber, simulate, plot, utils, constants
+
 
 def save_obj(obj, name ):
     with open(name + '.pkl', 'wb') as f:
@@ -31,6 +32,12 @@ def get_moped_and_summaries(
                             key,
                             N, 
                             noiseamp, 
+                            n_s,
+                            n_d,
+                            n_params,
+                            θ_fid,
+                            δθ,
+                            z_means,
                             n_gal=30.,
                             ell_min=0, 
                             cl_cut=-1, 
@@ -43,7 +50,7 @@ def get_moped_and_summaries(
                             Nz=512,
                             num_tomo=4):
 
-    
+    θ_der = (θ_fid + jnp.einsum("i,jk->ijk", jnp.array([-1., 1.]), jnp.diag(δθ) / 2.)).reshape((-1, 2))
     cl_cut = cl_cut
     if bins is not None:
         OUTBINS = bins
@@ -57,6 +64,8 @@ def get_moped_and_summaries(
     chi_source = chi_grid[-1]
     indices = jnp.array(indices_vector(num_tomo))
     cl_shape = indices.shape[0] * num_bins
+
+
     
     NOISEAMP = noiseamp
     do_noise = True
@@ -71,7 +80,6 @@ def get_moped_and_summaries(
                         [jnp.load(simdir + "derv/sim_%d.npy"%(i))[jnp.newaxis, ...] for i in range(n_d*2*2*2)]
                         ), axis=0).reshape(n_d*2, 2, 2, 4, N, N)
     
-    key = 
     key,rng = jr.split(key)
     
     fid_keys = jr.split(key, num=2*n_s)
@@ -84,7 +92,7 @@ def get_moped_and_summaries(
 
     print("MINIMUM ELL IDX: ", ellmin)
     
-    def compute_variance_catalog(zmean=z_means_analysis, n_gal=n_gal):
+    def compute_variance_catalog(zmean=z_means, n_gal=n_gal):
     
         N0 = Nmesh[0]
         N1 = Nmesh[1]

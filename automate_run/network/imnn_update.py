@@ -13,13 +13,29 @@ import cloudpickle as pickle
 
 np = jnp
 
-from imnns import _check_input
 from functools import partial
-from progress_bar import *
-from imnns import *
+from network.progress_bar import *
+from network.imnns import *
+
+
 import netket as nk
 from jax import config
 config.update("jax_enable_x64", False)
+
+
+def _check_input(input, shape, name, allow_None=False):
+    if (input is None) and (not allow_None):
+        raise ValueError(f"`{name}` is None")
+    elif (input is None) and allow_None:
+        return input
+    # elif not isinstance(
+    #         input, (jax.interpreters.xla.device_array, np.ndarray)):
+    #     raise TypeError(f"`{name}` must be a jax array")
+    else:
+        if input.shape != shape:
+            raise ValueError(f"`{name}` should have shape {shape} but has " +
+                             f"{input.shape}")
+    return input
 
 class _updateIMNN:
 
