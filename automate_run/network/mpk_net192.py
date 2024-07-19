@@ -106,6 +106,7 @@ class MPK_InceptNet(nn.Module):
     n_outs: int = 1
     act: Callable = smooth_leaky
     dtype: Any = jnp.bfloat16
+    do_moped: bool = True
     
     @nn.compact
     def __call__(self, x):
@@ -114,7 +115,9 @@ class MPK_InceptNet(nn.Module):
 
         # add in Cls information
         cls_summs = self.cl_compression(jax.lax.stop_gradient(x.astype(self.dtype))).reshape(-1, self.cl_shape)
-        cls_summs = self.moped.compress(jax.lax.stop_gradient(cls_summs)).reshape(-1) # moped compression
+        # optionally do the moped compression
+        if self.do_moped:
+            cls_summs = self.moped.compress(jax.lax.stop_gradient(cls_summs)).reshape(-1) # moped compression
 
         xlog = (log_transform(jax.lax.stop_gradient(x)) / 0.02).transpose((1,2,0))
         x = xlog + 1.0

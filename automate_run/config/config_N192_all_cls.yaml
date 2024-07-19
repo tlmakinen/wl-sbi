@@ -56,33 +56,32 @@ mpk_input_filters: [4, 6]    # input number of channels for MPK embedding. Here 
 act: smooth_leaky
 filters: [1,1,1]       # initial filter count for incept-stride network
 n_extra_summaries: 2   # number of output summaries
-
+do_moped: False         # whether to do MOPED compression in the network
 
 # training parameters
-learning_rate: 0.0002    # learning rate
+learning_rate: 0.0005    # learning rate
 gradient_clip: 1.0     # gradient clip value
 
 patience: 100         # how many epochs to wait to stop training
-min_iterations: 75   # minimum number of training epochs 
+min_iterations: 200   # minimum number of training epochs 
 max_iterations: 7000  # maximum number of training epochs
 
 training_noise_amplitudes: [0.125, 0.15, 0.20, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0]
 
-weightdir: /data101/makinen/lemur_sims/pm_sims/N192_hires/N192_mpk13_full_run/         # where to save the model weights after training
+weightdir: /data101/makinen/lemur_sims/pm_sims/N192_hires/N192_all_cls/         # where to save the model weights after training
 weightfile: imnn_w
 
 # prior dataset details
-prior_big: /data101/makinen/lemur_sims/pm_sims/N192_hires/prior_sims.npz                 # filename
+prior_big: /data101/makinen/lemur_sims/pm_sims/N192_hires/all_prior_sims.npz                 # filename
 prior_small: /data101/makinen/lemur_sims/pm_sims/N192_hires/smaller_prior_sims.npz       # filename
-
 
 # target simulation stuff
 target_name: "target_L_250_N_192_Nz_512.npz"
 
 
 # output directories for summaries etc
-output_directory: ./results/N192_mpk13_full_run/
-output_plot_directory: ./results/N192_mpk13_full_run/plots/
+output_directory: ./results/N192_all_cls/
+output_plot_directory: ./results/N192_all_cls/plots/
 
 
 

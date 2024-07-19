@@ -55,7 +55,6 @@ def load_obj(name):
 CONFIG_PATH = "./config/"
 
 config_name = sys.argv[1]
-noiseamp = float(sys.argv[2])
 
 # Function to load yaml configuration file
 def load_config(config_name):
@@ -99,6 +98,7 @@ def cls_allbins_nonoise(tomo_data, chunk_size=2):
 dtype = jnp.bfloat16
 kernel_size = config["mpk_kernel"]
 polynomial_degrees = config["polynomial_degrees"]
+do_moped = config["do_moped"]
 
 mpk_layer = MultipoleCNNFactory(
             kernel_shape=(kernel_size, kernel_size),
@@ -114,10 +114,14 @@ rng, key = jr.split(key)
 input_shape = (num_tomo, N, N)
 # -----
 
+# whether or not we're doing moped compression
+if do_moped:
+    n_t_summaries = config["n_params"]
+else:
+    n_t_summaries = cl_shape
 
 
-def run_training(key, noiseamp, 
-                 patience, 
+def run_compression(key, noiseamp, 
                  weightdir, 
                  weightfile, 
                  config):
@@ -136,11 +140,19 @@ def run_training(key, noiseamp,
 
     NOISEAMP = noiseamp
     print("-----------------------")
-    print("TRAINING FOR NOISEAMP: ", noiseamp)
+    print("COMPRESSING FOR NOISEAMP: ", noiseamp)
     print("-----------------------")
+
+    if not do_moped:
+        print("-----------------------")
+        print("USING CLS AS SUMMARIES, NOT MOPED ")
+        print("-----------------------")
+
+
     if weightfile is not None:
         print("WILL LOAD WEIGHTS FROM FILE", weightdir + weightfile)
         print("-----------------------")
+
 
     # --- OPTIMISER STUFF
     # Clip gradients at max value, and evt. apply weight decay
@@ -174,7 +186,8 @@ def run_training(key, noiseamp,
                                                              bins=None, 
                                                              do_log=False, 
                                                              simdir=config["datadir"],
-                                                             L=config["L"]
+                                                             L=config["L"],
+                                                             do_moped=do_moped
                                         )
 
 
@@ -193,7 +206,8 @@ def run_training(key, noiseamp,
                         act=act, 
                         cl_shape=cl_shape,
                         n_outs=2,
-                        dtype=jnp.bfloat16
+                        dtype=jnp.bfloat16,
+                        do_moped=do_moped
     )
 
     # wrap the noise simulators with appropriate noise amplitude
@@ -227,7 +241,7 @@ def run_training(key, noiseamp,
     IMNN =  newNoiseNumericalGradientIMNN(
         n_s=n_s_eff, n_d=n_d_eff, 
         n_params=config["n_params"], 
-        n_summaries=config["n_params"] + config["n_extra_summaries"], # output is 2 moped + 2 new summaries
+        n_summaries=n_t_summaries + config["n_extra_summaries"], # output is 2 moped + 2 new summaries
         input_shape=input_shape, θ_fid=θ_fid, δθ=δθ, model=model,
         optimiser=optimiser, 
         key_or_state=jnp.array(model_key),
@@ -244,78 +258,20 @@ def run_training(key, noiseamp,
     )
     gc.collect()
     # load the previous round's weights
-    if weightfile is not None:
-        print("LOADING WEIGHTS FROM FILE", weightdir + weightfile)
-        wbest = load_obj(weightdir + weightfile)
-    else:
-        wbest = IMNN.w
+    print("LOADING WEIGHTS FROM FILE", weightdir + weightfile)
+    wbest = load_obj(weightdir + weightfile)
+
 
     IMNN.set_F_statistics(wbest, key)
     print("num trainable params: ", sum(x.size for x in jax.tree_util.tree_leaves(wbest)))
-    print("-----------------------")
-    print("MOPED F: ", mymoped.F)
-    print("initial IMNN F: ", IMNN.F)
-    print("initial det IMNN F: ", np.linalg.det(IMNN.F))
-    print("initial IMNN_F / MOPED_F :", jnp.linalg.det(IMNN.F) / jnp.linalg.det(mymoped.F)) 
-    print("-----------------------")
-
-    print("training IMNN now")
-    key,rng = jax.random.split(key) # retrain # patience=75, min_its=300 
-    IMNN.fit(10.0, 0.01, γ=1.0, γ2=100.0,
-                                rng=jnp.array(rng), 
-                                print_rate=None, # change to 2 to fit with pbar
-                                patience=int(config["patience"]), 
-                                best=True,
-                                max_iterations=int(config["max_iterations"]), 
-                                min_iterations=int(config["min_iterations"])) 
-
     # print and show fishers
-    print("training completed !")
     print("-----------------------")
     print("MOPED F: ", mymoped.F)
-    print("final IMNN F: ", IMNN.F)
-    print("final det IMNN F: ", np.linalg.det(IMNN.F))
-    print("final IMNN_F / MOPED_F :", jnp.linalg.det(IMNN.F) / jnp.linalg.det(mymoped.F)) 
+    print("IMNN F: ", IMNN.F)
+    print("det IMNN F: ", np.linalg.det(IMNN.F))
+    print("IMNN_F / MOPED_F :", jnp.linalg.det(IMNN.F) / jnp.linalg.det(mymoped.F)) 
     print("-----------------------")
 
-    # plot IMNN history
-    ax = IMNN.plot(expected_detF=jnp.linalg.det(mymoped.F))
-    ax[0].set_yscale("log")
-    plt.savefig(config["output_plot_directory"] + "training_noiseamp_%d"%(noiseamp*100))
-    plt.close()
-
-    # new best weights
-    weightfile = config["weightfile"] +  "_N_%d_noise_%d"%(N, noiseamp*100)
-
-    weightpath = os.path.join(weightdir, weightfile)
-    # save the IMNN weights
-    save_obj(IMNN.w, weightpath)
-    weightfile += ".pkl" # add extension
-    # save history as well
-    save_obj(IMNN.history, os.path.join(weightdir, 
-                                        config["weightfile"] +  "_N_%d_noise_%d"%(N, noiseamp*100) + "_history"))
-    
-
-    # -----
-    # make a fisher plot
-    mean = config["θ_fid"]
-    fishers = [mymoped.F, IMNN.F]
-    colours =["orange", "black", "blue"]
-    labels = ["Cls",  "info-update IMNN with Cls + field"]
-    
-    for i,f in enumerate(fishers): 
-        if i==0:
-            ax = plot_fisher_ellipse(f, mean=mean, color=colours[i], label=labels[i])
-        else:
-            plot_fisher_ellipse(f, mean=mean, ax=ax, color=colours[i], label=labels[i])
-    
-    plt.legend(framealpha=0.0)
-    plt.xlabel(r'$\Omega_m$')
-    plt.ylabel(r'$S_8$')
-    plt.savefig(config["output_plot_directory"] + "fisherplot_noiseamp_%d"%(noiseamp*100))
-    plt.close()
-    # plt.show()
-    # -----
 
     def compress_prior(name="prior_big", keyint=333):
     
@@ -396,10 +352,9 @@ def run_training(key, noiseamp,
     # --- ---
 
 
-    
     print("saving everything")
 
-    outfile_name = os.path.join(config["output_directory"], "summaries_noise_%d"%(noiseamp * 100))
+    outfile_name = os.path.join(config["output_directory"], "summaries_noise_%d_compression"%(noiseamp * 100))
     np.savez(outfile_name,
             # small prior
              moped_summaries_small=moped_summs_small,
@@ -434,24 +389,11 @@ def main():
 
     key = jr.PRNGKey(444)
     
-    noiseamp = float(sys.argv[2])
+    noiseamp = 1.0
+    noiseamp_to_load = 1.0
+    weightfile = config["weightfile"] +  "_N_%d_noise_%d.pkl"%(N, noiseamp_to_load*100)
 
-    weightfile_index = int(sys.argv[3]) if (int(sys.argv[3]) >= 0) else None # index of noise schedule to load for transfer learning
-
-    # 19 noise levels to train on
-    training_noise_amplitudes = [0.125, 0.15, 0.20, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, \
-                                     0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0]
-
-    # if weightfile not specified, start from scratch, else load previous round's weights
-    if weightfile_index is not None:
-        noiseamp_to_load = training_noise_amplitudes[weightfile_index]
-        weightfile = config["weightfile"] +  "_N_%d_noise_%d.pkl"%(N, noiseamp_to_load*100)
-
-    else:
-        weightfile = None
-
-    weightfile = run_training(key, noiseamp, 
-                    patience=config["patience"], 
+    weightfile = run_compression(key, noiseamp, 
                     weightdir=config["weightdir"], 
                     weightfile=weightfile, 
                     config=config)

@@ -45,6 +45,7 @@ def get_moped_and_summaries(
                             bins=None, 
                             do_log=False, 
                             simdir="/data101/makinen/lemur_sims/pm_sims/N192_hires/",
+                            do_moped=True,
                             L=250,
                             Lz=4000,
                             Nz=512,
@@ -209,13 +210,25 @@ def get_moped_and_summaries(
                         θ_fid=θ_fid
         )
 
-        moped_statistic = dict(
-                n_t = 2,
-                mean_derivatives = mymoped2.mu_dervs,
-                covariance = mymoped.invF,
-                Fisher = mymoped.F,
-                fid_summaries=mymoped.compress(fid_cls),
-        )
+        
+        if do_moped:
+            moped_statistic = dict(
+                    n_t = 2,
+                    mean_derivatives = mymoped2.mu_dervs,
+                    covariance = mymoped.invF,
+                    Fisher = mymoped.F,
+                    fid_summaries=mymoped.compress(fid_cls),
+            )
+
+        else:
+            moped_statistic = dict(
+                    n_t = cl_shape,
+                    mean_derivatives = mymoped.mu_dervs,
+                    covariance = mymoped.invF,
+                    Fisher = mymoped.F,
+                    fid_summaries=mymoped.compress(fid_cls),
+            )
+
         # spits out dictionary to feed to network
         return mymoped, moped_statistic
 
