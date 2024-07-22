@@ -1,0 +1,12 @@
+
+
+
+# graphics
+/automate_run/results/N192_automatic_full_run/*
+/automate_run/results/N192_mpk7_full_run/*
+/automate_run/results/N192_mpk13_full_run/*
+/mdn_idea/*
+
+
+# logs
+*.log
